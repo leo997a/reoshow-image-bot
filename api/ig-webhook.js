@@ -1,42 +1,30 @@
-export async function GET(request) {
+export default async function handler(req, res) {
   try {
-    const { searchParams } = new URL(request.url);
-    const mode = searchParams.get("hub.mode");
-    const token = searchParams.get("hub.verify_token");
-    const challenge = searchParams.get("hub.challenge");
+    if (req.method === "GET") {
+      const mode = req.query["hub.mode"];
+      const token = req.query["hub.verify_token"];
+      const challenge = req.query["hub.challenge"];
 
-    if (mode === "subscribe" && token === process.env.META_VERIFY_TOKEN) {
-      return new Response(challenge || "OK", { status: 200 });
+      if (mode === "subscribe" && token === process.env.META_VERIFY_TOKEN) {
+        return res.status(200).send(challenge || "OK");
+      }
+
+      return res.status(403).send("Forbidden");
     }
 
-    return new Response("Forbidden", { status: 403 });
-  } catch (error) {
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        where: "GET /api/ig-webhook",
-        error: error?.message || "Unknown error"
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      }
-    );
-  }
-}
+    if (req.method === "POST") {
+      return res.status(200).json({
+        ok: true,
+        received: req.body || null
+      });
+    }
 
-export async function POST(request) {
-  try {
-    const body = await request.json();
-    return Response.json({ ok: true, received: body });
+    return res.status(405).send("Method Not Allowed");
   } catch (error) {
-    return Response.json(
-      {
-        ok: false,
-        where: "POST /api/ig-webhook",
-        error: error?.message || "Unknown error"
-      },
-      { status: 500 }
-    );
+    return res.status(500).json({
+      ok: false,
+      where: "api/ig-webhook.js",
+      error: error?.message || String(error),
+    });
   }
 }
