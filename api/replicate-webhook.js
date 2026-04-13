@@ -1,4 +1,4 @@
-import { sendInstagramImage, sendInstagramText } from "../lib/instagram";
+import { sendInstagramImage, sendInstagramText } from "../lib/instagram.js";
 
 export async function POST(request) {
   try {
@@ -28,7 +28,10 @@ export async function POST(request) {
         recipientId,
         "اكتمل التنفيذ لكن لم أحصل على رابط الصورة النهائية."
       );
-      return Response.json({ ok: false, error: "Missing output URL" }, { status: 500 });
+      return Response.json(
+        { ok: false, error: "Missing output URL" },
+        { status: 500 }
+      );
     }
 
     await sendInstagramImage(recipientId, imageUrl);
@@ -36,7 +39,11 @@ export async function POST(request) {
     return Response.json({ ok: true, imageUrl });
   } catch (error) {
     return Response.json(
-      { ok: false, where: "POST /api/replicate-webhook", error: error?.message || "Unknown error" },
+      {
+        ok: false,
+        where: "POST /api/replicate-webhook",
+        error: error?.message || "Unknown error",
+      },
       { status: 500 }
     );
   }
