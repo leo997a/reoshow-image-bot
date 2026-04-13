@@ -1,4 +1,4 @@
-import { sendInstagramText } from "../lib/instagram";
+import { sendInstagramText } from "../lib/instagram.js";
 
 const CREATE_COMMANDS = new Set(["صورة", "photo", "اصنع صورتك"]);
 
@@ -19,7 +19,7 @@ export async function GET(request) {
       {
         ok: false,
         where: "GET /api/ig-webhook",
-        error: error?.message || "Unknown error"
+        error: error?.message || "Unknown error",
       },
       { status: 500 }
     );
@@ -59,20 +59,22 @@ export async function POST(request) {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${process.env.REPLICATE_API_TOKEN}`
+              Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}`,
             },
             body: JSON.stringify({
-              version: "black-forest-labs/flux-2-pro:f558a59a8bf126d892ab219846966674f6acc616940c17841aeb242e245952ff",
+              version:
+                "black-forest-labs/flux-2-pro:f558a59a8bf126d892ab219846966674f6acc616940c17841aeb242e245952ff",
               input: {
-                prompt: "Create a photorealistic close studio sports portrait of the exact same man from the input image. Keep his identity strictly unchanged: exact face shape, skin tone, age cues, hairline, hairstyle, hair color, eyebrows, eye area, nose, lips, jawline, chin, beard/stubble status, and overall male proportions. Change only the setup: neutral grey studio background, black crew-neck shirt, tight centered crop from upper chest to top of head, soft studio lighting, neutral expression, realistic skin texture. Add dark wayfarer-style sunglasses, white wired earbuds, and a clean lower-third TV graphic. Keep the lower-third text exactly as: UCL QUARTERFINALS / FC Barcelona has never beaten Atletico Madrid in UCL over 2 legs. Do not beautify. Do not change age, ethnicity, or facial structure.",
+                prompt:
+                  "Create a photorealistic close studio sports portrait of the exact same man from the input image. Keep his identity strictly unchanged: exact face shape, skin tone, age cues, hairline, hairstyle, hair color, eyebrows, eye area, nose, lips, jawline, chin, beard/stubble status, and overall male proportions. Change only the setup: neutral grey studio background, black crew-neck shirt, tight centered crop from upper chest to top of head, soft studio lighting, neutral expression, realistic skin texture. Add dark wayfarer-style sunglasses, white wired earbuds, and a clean lower-third TV graphic. Keep the lower-third text exactly as: UCL QUARTERFINALS / FC Barcelona has never beaten Atletico Madrid in UCL over 2 legs. Do not beautify. Do not change age, ethnicity, or facial structure.",
                 input_images: [selfieUrl],
                 aspect_ratio: "1:1",
                 resolution: "1 MP",
-                output_format: "jpg"
+                output_format: "jpg",
               },
               webhook: `${process.env.APP_URL}/api/replicate-webhook?igsid=${encodeURIComponent(senderId)}`,
-              webhook_events_filter: ["completed"]
-            })
+              webhook_events_filter: ["completed"],
+            }),
           });
 
           const replicateData = await replicateRes.json();
@@ -80,8 +82,6 @@ export async function POST(request) {
           if (!replicateRes.ok) {
             throw new Error(`Replicate create failed: ${JSON.stringify(replicateData)}`);
           }
-
-          continue;
         }
       }
     }
@@ -92,7 +92,7 @@ export async function POST(request) {
       {
         ok: false,
         where: "POST /api/ig-webhook",
-        error: error?.message || "Unknown error"
+        error: error?.message || "Unknown error",
       },
       { status: 500 }
     );
