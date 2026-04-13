@@ -1,59 +1,27 @@
-import { fal } from "@fal-ai/client";
-
-fal.config({
-  credentials: process.env.FAL_KEY,
-});
-
 export async function GET(request) {
   try {
+    const token = process.env.REPLICATE_API_TOKEN;
+    if (!token) return Response.json({ ok: false, error: "Missing REPLICATE_API_TOKEN" }, { status: 500 });
+
     const { searchParams } = new URL(request.url);
-    const requestId = searchParams.get("requestId");
+    const predictionId = searchParams.get("predictionId");
+    if (!predictionId) return Response.json({ ok: false, error: "Missing predictionId" }, { status: 400 });
 
-    if (!requestId) {
-      return Response.json(
-        { ok: false, error: "Missing requestId" },
-        { status: 400 }
-      );
-    }
-
-    const status = await fal.queue.status("fal-ai/flux-pro/kontext/max/multi", {
-      requestId,
-      logs: true
+    const res = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+      headers: { "Authorization": `Bearer ${token}` }
     });
 
-    if (status.status !== "COMPLETED") {
-      return Response.json({
-        ok: true,
-        status: status.status,
-        logs: status.logs || []
-      });
-    }
+    const data = await res.json();
+    if (!res.ok) return Response.json({ ok: false, error: data }, { status: 500 });
 
-    const result = await fal.queue.result("fal-ai/flux-pro/kontext/max/multi", {
-      requestId
-    });
-
-    const imageUrl = result?.data?.images?.[0]?.url;
-
-    if (!imageUrl) {
-      return Response.json(
-        { ok: false, error: "No image URL returned", result },
-        { status: 500 }
-      );
-    }
+    const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
 
     return Response.json({
       ok: true,
-      status: "COMPLETED",
-      image_url: imageUrl
+      status: data.status,
+      image_url: data.status === "succeeded" ? imageUrl : null
     });
-  } catch (error) {
-    return Response.json(
-      {
-        ok: false,
-        error: error?.message || "Unknown error"
-      },
-      { status: 500 }
-    );
+  } catch (e) {
+    return Response.json({ ok: false, error: e?.message || "Unknown error" }, { status: 500 });
   }
 }
