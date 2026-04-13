@@ -10,21 +10,44 @@ function toDataUri(buffer, mimeType = "image/jpeg") {
   return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
 
+async function fetchImageAsDataUri(url) {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      "Accept": "image/*,*/*;q=0.8"
+    }
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch selfie image: ${res.status} ${res.statusText}`);
+  }
+
+  const contentType = (res.headers.get("content-type") || "image/jpeg").split(";")[0];
+
+  if (!contentType.startsWith("image/")) {
+    throw new Error(`URL did not return an image. Got: ${contentType}`);
+  }
+
+  const arrayBuffer = await res.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  return toDataUri(buffer, contentType);
+}
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const selfieUrl = searchParams.get("selfieUrl");
 
     if (!selfieUrl) {
-      return Response.json(
-        { ok: false, error: "Missing selfieUrl" },
-        { status: 400 }
-      );
+      return Response.json({ ok: false, error: "Missing selfieUrl" }, { status: 400 });
     }
 
     const templatePath = path.join(process.cwd(), "assets", "messi-template.jpg");
     const templateBuffer = await fs.readFile(templatePath);
     const templateDataUri = toDataUri(templateBuffer, "image/jpeg");
+
+    const selfieDataUri = await fetchImageAsDataUri(selfieUrl);
 
     const prompt = `
 You are given exactly 2 images.
@@ -60,7 +83,7 @@ Return one final image only.
     const job = await fal.queue.submit("fal-ai/flux-pro/kontext/max/multi", {
       input: {
         prompt,
-        image_urls: [templateDataUri, selfieUrl]
+        image_urls: [templateDataUri, selfieDataUri]
       }
     });
 
@@ -70,10 +93,7 @@ Return one final image only.
     });
   } catch (error) {
     return Response.json(
-      {
-        ok: false,
-        error: error?.message || "Unknown error"
-      },
+      { ok: false, error: error?.message || "Unknown error" },
       { status: 500 }
     );
   }
