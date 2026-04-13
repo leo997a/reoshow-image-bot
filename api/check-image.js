@@ -1,5 +1,9 @@
 import { fal } from "@fal-ai/client";
 
+fal.config({
+  credentials: process.env.FAL_KEY,
+});
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
