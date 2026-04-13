@@ -1,6 +1,6 @@
 import { sendInstagramText } from "../lib/instagram.js";
 
-const CREATE_COMMANDS = new Set(["صورة", "photo", "اصنع صورتك"]);
+const CREATE_COMMANDS = new Set(["ابدأ", "photo", "اصنع صورتك"]);
 
 export async function GET(request) {
   try {
