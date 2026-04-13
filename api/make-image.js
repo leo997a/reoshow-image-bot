@@ -2,6 +2,10 @@ import { fal } from "@fal-ai/client";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+fal.config({
+  credentials: process.env.FAL_KEY,
+});
+
 function toDataUri(buffer, mimeType = "image/jpeg") {
   return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
