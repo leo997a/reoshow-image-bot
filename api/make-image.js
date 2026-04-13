@@ -1,100 +1,43 @@
-import { fal } from "@fal-ai/client";
-import fs from "node:fs/promises";
-import path from "node:path";
-
-fal.config({
-  credentials: process.env.FAL_KEY,
-});
-
-function toDataUri(buffer, mimeType = "image/jpeg") {
-  return `data:${mimeType};base64,${buffer.toString("base64")}`;
-}
-
-async function fetchImageAsDataUri(url) {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      "Accept": "image/*,*/*;q=0.8"
-    }
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch selfie image: ${res.status} ${res.statusText}`);
-  }
-
-  const contentType = (res.headers.get("content-type") || "image/jpeg").split(";")[0];
-
-  if (!contentType.startsWith("image/")) {
-    throw new Error(`URL did not return an image. Got: ${contentType}`);
-  }
-
-  const arrayBuffer = await res.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  return toDataUri(buffer, contentType);
-}
+const VERSION = "black-forest-labs/flux-2-pro:f558a59a8bf126d892ab219846966674f6acc616940c17841aeb242e245952ff";
 
 export async function GET(request) {
   try {
+    const token = process.env.REPLICATE_API_TOKEN;
+    if (!token) return Response.json({ ok: false, error: "Missing REPLICATE_API_TOKEN" }, { status: 500 });
+
     const { searchParams } = new URL(request.url);
     const selfieUrl = searchParams.get("selfieUrl");
+    if (!selfieUrl) return Response.json({ ok: false, error: "Missing selfieUrl" }, { status: 400 });
 
-    if (!selfieUrl) {
-      return Response.json({ ok: false, error: "Missing selfieUrl" }, { status: 400 });
-    }
+    const prompt = `Create a photorealistic close studio sports portrait of the exact same man from the input image. Keep his identity strictly unchanged: exact face shape, skin tone, age cues, hairline, hairstyle, hair color, eyebrows, eye area, nose, lips, jawline, chin, beard/stubble status, and overall male proportions. Change only the setup: neutral grey studio background, black crew-neck shirt, tight centered crop from upper chest to top of head, soft studio lighting, neutral expression, realistic skin texture. Add dark wayfarer-style sunglasses, white wired earbuds, and a clean lower-third TV graphic. Keep the lower-third text exactly as: UCL QUARTERFINALS / FC Barcelona has never beaten Atletico Madrid in UCL over 2 legs. Do not beautify. Do not change age, ethnicity, or facial structure.`;
 
-    const templatePath = path.join(process.cwd(), "assets", "messi-template.jpg");
-    const templateBuffer = await fs.readFile(templatePath);
-    const templateDataUri = toDataUri(templateBuffer, "image/jpeg");
-
-    const selfieDataUri = await fetchImageAsDataUri(selfieUrl);
-
-    const prompt = `
-You are given exactly 2 images.
-
-IMAGE 1 = TEMPLATE.
-IMAGE 2 = IDENTITY.
-
-Use IMAGE 1 only for the setup:
-close studio sports-meme portrait, neutral grey background, black shirt,
-dark wayfarer sunglasses, white wired earbuds, tight crop, head placement,
-lighting style, and the lower-third TV graphic layout.
-
-Use IMAGE 2 only for the identity:
-preserve the man's exact face shape, skin tone, age cues, hairstyle,
-hairline, hair color, eyebrows, eyes, nose, lips, jawline, chin,
-and exact facial-hair status.
-
-Do not copy any identity traits from IMAGE 1.
-No face blend.
-No template identity leakage.
-No Messi-like resemblance.
-
-Keep a neutral expression.
-Make it photorealistic.
-
-Keep the lower-third text exactly as shown in IMAGE 1, including:
-Top line: "UCL QUARTERFINALS"
-Bottom line: "FC Barcelona has never beaten Atletico Madrid in UCL over 2 legs"
-
-Return one final image only.
-    `.trim();
-
-    const job = await fal.queue.submit("fal-ai/flux-pro/kontext/max/multi", {
-      input: {
-        prompt,
-        image_urls: [templateDataUri, selfieDataUri]
-      }
+    const res = await fetch("https://api.replicate.com/v1/predictions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        version: VERSION,
+        input: {
+          prompt,
+          input_images: [selfieUrl],
+          aspect_ratio: "1:1",
+          resolution: "1 MP",
+          output_format: "jpg"
+        }
+      })
     });
+
+    const data = await res.json();
+    if (!res.ok) return Response.json({ ok: false, error: data }, { status: 500 });
 
     return Response.json({
       ok: true,
-      request_id: job.request_id
+      prediction_id: data.id,
+      status: data.status
     });
-  } catch (error) {
-    return Response.json(
-      { ok: false, error: error?.message || "Unknown error" },
-      { status: 500 }
-    );
+  } catch (e) {
+    return Response.json({ ok: false, error: e?.message || "Unknown error" }, { status: 500 });
   }
 }
