@@ -1,43 +1,34 @@
 import { sendInstagramText } from "../lib/instagram.js";
+import {
+  openImageSession,
+  hasImageSession,
+  clearImageSession,
+} from "../lib/session.js";
 
 const SELF_IG_ID = "17841403859875518";
 
-const CREATE_COMMANDS = new Set([
-  "ابدأ",
-  "photo",
-  "اصنع صورتك"
-]);
-
 function normalizeText(text) {
-  return (text || "").trim().toLowerCase();
+  return (text || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function isCreateCommand(text) {
-  return CREATE_COMMANDS.has(normalizeText(text));
+function isImageStartCommand(text) {
+  const t = normalizeText(text);
+  return t === "__create_image__" || t === "ابدا الصوره" || t === "ابدا الصورة";
 }
 
-async function sendInstagramPrivateReply(commentId, text) {
-  const res = await fetch(
-    `https://graph.facebook.com/v25.0/${commentId}/private_replies`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.META_PAGE_ACCESS_TOKEN}`,
-      },
-      body: JSON.stringify({
-        message: text,
-      }),
-    }
-  );
-
-  const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error(`Meta private reply failed: ${JSON.stringify(data)}`);
+async function safeSendText(recipientId, text) {
+  try {
+    await sendInstagramText(recipientId, text);
+  } catch (error) {
+    console.error("safeSendText failed:", error?.message || error);
   }
-
-  return data;
 }
 
 export async function GET(request) {
@@ -72,60 +63,32 @@ export async function POST(request) {
     console.log("IG webhook body:", JSON.stringify(body));
 
     for (const entry of body.entry || []) {
-      // 1) مسار التعليقات comments
+      // تجاهل comments بالكامل في هذا المسار
       for (const change of entry.changes || []) {
-        try {
-          if (change?.field !== "comments") continue;
-
-          const value = change?.value || {};
-          const fromId = value?.from?.id;
-          const username = value?.from?.username;
-          const commentId = value?.id;
-          const commentText = value?.text || "";
-
-          // تجاهل تعليقات حسابك أنت
-          if (!fromId || fromId === SELF_IG_ID || username === "reoshow") {
-            console.log("Skip self/invalid comment event", { fromId, username, commentText });
-            continue;
-          }
-
-          if (!isCreateCommand(commentText)) {
-            console.log("Ignore non-create comment", { fromId, username, commentText });
-            continue;
-          }
-
-          console.log("Create command from comment", { fromId, username, commentId, commentText });
-
-          // رد خاص على التعليق
-          await sendInstagramPrivateReply(
-            commentId,
-            "أرسل لنا الآن رسالة خاصة بكلمة: ابدأ، ثم أرسل صورة واحدة واضحة لوجهك."
-          );
-        } catch (commentError) {
-          console.error("Comment processing failed:", commentError);
-          continue;
+        if (change?.field === "comments" || change?.field === "live_comments") {
+          console.log("Ignore comment/live_comment in custom image webhook");
         }
       }
 
-      // 2) مسار الرسائل الخاصة DM
       for (const event of entry.messaging || []) {
         try {
           const senderId = event?.sender?.id;
           const text = event?.message?.text?.trim();
           const attachments = event?.message?.attachments || [];
+          const isEcho = event?.message?.is_echo;
 
-          // تجاهل رسائلك أنت أو أحداث ناقصة
-          if (!senderId || senderId === SELF_IG_ID) {
+          if (!senderId || senderId === SELF_IG_ID || isEcho) {
             console.log("Skip self/invalid messaging event", JSON.stringify(event));
             continue;
           }
 
-          if (text && isCreateCommand(text)) {
-            console.log("DM command matched", { senderId, text });
+          if (text && isImageStartCommand(text)) {
+            await openImageSession(senderId, 600);
+            console.log("Image session opened", { senderId });
 
-            await sendInstagramText(
+            await safeSendText(
               senderId,
-              "أرسل صورة واحدة واضحة لوجهك، أمامية، بإضاءة جيدة، وبدون أشخاص آخرين."
+              "أرسل الآن صورة واحدة واضحة لوجهك، أمامية وبإضاءة جيدة."
             );
             continue;
           }
@@ -135,13 +98,21 @@ export async function POST(request) {
           );
 
           if (imageAttachment) {
+            const hasSession = await hasImageSession(senderId);
+
+            if (!hasSession) {
+              console.log("Image ignored: no open session", { senderId });
+              await safeSendText(
+                senderId,
+                "لبدء إنشاء الصورة، اضغط أولًا «ابدأ الصورة»."
+              );
+              continue;
+            }
+
+            await clearImageSession(senderId);
+
             const selfieUrl = imageAttachment.payload.url;
             console.log("Image received in DM", { senderId, selfieUrl });
-
-            await sendInstagramText(
-              senderId,
-              "جاري إنشاء صورتك الآن، انتظر قليلًا 👌"
-            );
 
             const replicateRes = await fetch("https://api.replicate.com/v1/predictions", {
               method: "POST",
@@ -170,16 +141,20 @@ export async function POST(request) {
 
             if (!replicateRes.ok) {
               console.error("Replicate create failed", replicateData);
-              await sendInstagramText(
-                senderId,
-                "تعذر بدء إنشاء الصورة الآن. جرّب بعد قليل."
-              );
+              await safeSendText(senderId, "تعذر بدء إنشاء الصورة الآن. جرّب بعد قليل.");
+              continue;
             }
 
+            await safeSendText(senderId, "جاري إنشاء صورتك الآن، انتظر قليلًا 👌");
             continue;
           }
 
-          console.log("No matching DM text or image attachment", { senderId, text });
+          console.log("No matching DM text or image attachment", {
+            senderId,
+            text,
+            attachmentsCount: attachments.length,
+            attachmentTypes: attachments.map((a) => a?.type),
+          });
         } catch (eventError) {
           console.error("Messaging event processing failed:", eventError);
           continue;
