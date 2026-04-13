@@ -1,0 +1,8 @@
+{
+  "name": "reoshow-image-bot",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@google/genai": "^1.14.0"
+  }
+}
