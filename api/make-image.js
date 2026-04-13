@@ -1,39 +1,9 @@
-import { GoogleGenAI } from "@google/genai";
+import { fal } from "@fal-ai/client";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
-
-async function readLocalImageAsBase64(filePath, mimeType = "image/jpeg") {
-  const buffer = await fs.readFile(filePath);
-  return {
-    mimeType,
-    data: buffer.toString("base64"),
-  };
-}
-
-async function fetchImageAsBase64(url) {
-  const res = await fetch(url);
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch selfie image: ${res.status}`);
-  }
-
-  const contentType = (res.headers.get("content-type") || "image/jpeg").split(";")[0];
-
-  if (!contentType.startsWith("image/")) {
-    throw new Error(`URL did not return an image. Got: ${contentType}`);
-  }
-
-  const arrayBuffer = await res.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  return {
-    mimeType: contentType,
-    data: buffer.toString("base64"),
-  };
+function toDataUri(buffer, mimeType = "image/jpeg") {
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
 
 export async function GET(request) {
@@ -43,15 +13,14 @@ export async function GET(request) {
 
     if (!selfieUrl) {
       return Response.json(
-        { ok: false, error: "Missing selfieUrl query parameter" },
+        { ok: false, error: "Missing selfieUrl" },
         { status: 400 }
       );
     }
 
     const templatePath = path.join(process.cwd(), "assets", "messi-template.jpg");
-
-    const template = await readLocalImageAsBase64(templatePath, "image/jpeg");
-    const selfie = await fetchImageAsBase64(selfieUrl);
+    const templateBuffer = await fs.readFile(templatePath);
+    const templateDataUri = toDataUri(templateBuffer, "image/jpeg");
 
     const prompt = `
 You are given exactly 2 images.
@@ -84,56 +53,22 @@ Bottom line: "FC Barcelona has never beaten Atletico Madrid in UCL over 2 legs"
 Return one final image only.
     `.trim();
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-image-preview",
-      contents: [
-        { text: prompt },
-        {
-          inlineData: {
-            mimeType: template.mimeType,
-            data: template.data,
-          },
-        },
-        {
-          inlineData: {
-            mimeType: selfie.mimeType,
-            data: selfie.data,
-          },
-        },
-      ],
-      config: {
-        responseModalities: ["TEXT", "IMAGE"],
-      },
+    const job = await fal.queue.submit("fal-ai/flux-pro/kontext/max/multi", {
+      input: {
+        prompt,
+        image_urls: [templateDataUri, selfieUrl]
+      }
     });
 
-    const parts = response?.candidates?.[0]?.content?.parts || [];
-    const imagePart = parts.find((part) => part.inlineData?.data);
-
-    if (!imagePart) {
-      return Response.json(
-        {
-          ok: false,
-          error: "Gemini returned no image",
-          parts,
-        },
-        { status: 500 }
-      );
-    }
-
-    const mimeType = imagePart.inlineData.mimeType || "image/png";
-    const imageBuffer = Buffer.from(imagePart.inlineData.data, "base64");
-
-    return new Response(imageBuffer, {
-      headers: {
-        "Content-Type": mimeType,
-        "Cache-Control": "no-store",
-      },
+    return Response.json({
+      ok: true,
+      request_id: job.request_id
     });
   } catch (error) {
     return Response.json(
       {
         ok: false,
-        error: error?.message || "Unknown error",
+        error: error?.message || "Unknown error"
       },
       { status: 500 }
     );
