@@ -1,8 +1,5 @@
 {
   "name": "reoshow-image-bot",
   "private": true,
-  "type": "module",
-  "dependencies": {
-    "@fal-ai/client": "latest"
-  }
+  "type": "module"
 }
