@@ -14,12 +14,10 @@ export async function GET(request) {
     const data = await res.json();
     if (!res.ok) return Response.json({ ok: false, error: data }, { status: 500 });
 
-    const imageUrl = Array.isArray(data.output) ? data.output[0] : data.output;
-
     return Response.json({
       ok: true,
       status: data.status,
-      image_url: data.status === "succeeded" ? imageUrl : null
+      image_url: data.status === "succeeded" ? data.output : null
     });
   } catch (e) {
     return Response.json({ ok: false, error: e?.message || "Unknown error" }, { status: 500 });
