@@ -8,19 +8,11 @@ import {
 const SELF_IG_ID = "17841403859875518";
 
 function normalizeText(text) {
-  return (text || "")
-    .toLowerCase()
-    .trim()
-    .replace(/[أإآ]/g, "ا")
-    .replace(/ة/g, "ه")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return (text || "").toLowerCase().trim();
 }
 
 function isImageStartCommand(text) {
-  const t = normalizeText(text);
-  return t === "__create_image__" || t === "ابدا الصوره" || t === "ابدا الصورة";
+  return normalizeText(text) === "create_image";
 }
 
 async function safeSendText(recipientId, text) {
@@ -63,7 +55,7 @@ export async function POST(request) {
     console.log("IG webhook body:", JSON.stringify(body));
 
     for (const entry of body.entry || []) {
-      // تجاهل comments بالكامل في هذا المسار
+      // تجاهل التعليقات بالكامل في مسار الصورة
       for (const change of entry.changes || []) {
         if (change?.field === "comments" || change?.field === "live_comments") {
           console.log("Ignore comment/live_comment in custom image webhook");
@@ -82,6 +74,7 @@ export async function POST(request) {
             continue;
           }
 
+          // 1) بدء مسار الصورة فقط عند create_image
           if (text && isImageStartCommand(text)) {
             await openImageSession(senderId, 600);
             console.log("Image session opened", { senderId });
@@ -93,6 +86,7 @@ export async function POST(request) {
             continue;
           }
 
+          // 2) إذا وصلتنا صورة
           const imageAttachment = attachments.find(
             (a) => a?.type === "image" && a?.payload?.url
           );
@@ -104,7 +98,7 @@ export async function POST(request) {
               console.log("Image ignored: no open session", { senderId });
               await safeSendText(
                 senderId,
-                "لبدء إنشاء الصورة، اضغط أولًا «ابدأ الصورة»."
+                "لبدء إنشاء الصورة اضغط أولًا زر «ابدأ الصورة»."
               );
               continue;
             }
@@ -146,6 +140,12 @@ export async function POST(request) {
             }
 
             await safeSendText(senderId, "جاري إنشاء صورتك الآن، انتظر قليلًا 👌");
+            continue;
+          }
+
+          // 3) تجاهل أي نص آخر غير create_image
+          if (text) {
+            console.log("Ignore non-image command text", { senderId, text });
             continue;
           }
 
