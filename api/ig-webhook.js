@@ -1,6 +1,44 @@
 import { sendInstagramText } from "../lib/instagram.js";
 
-const CREATE_COMMANDS = new Set(["ابدأ", "photo", "اصنع صورتك"]);
+const SELF_IG_ID = "17841403859875518";
+
+const CREATE_COMMANDS = new Set([
+  "ابدأ",
+  "photo",
+  "اصنع صورتك"
+]);
+
+function normalizeText(text) {
+  return (text || "").trim().toLowerCase();
+}
+
+function isCreateCommand(text) {
+  return CREATE_COMMANDS.has(normalizeText(text));
+}
+
+async function sendInstagramPrivateReply(commentId, text) {
+  const res = await fetch(
+    `https://graph.facebook.com/v25.0/${commentId}/private_replies`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.META_PAGE_ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify({
+        message: text,
+      }),
+    }
+  );
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(`Meta private reply failed: ${JSON.stringify(data)}`);
+  }
+
+  return data;
+}
 
 export async function GET(request) {
   try {
@@ -34,19 +72,56 @@ export async function POST(request) {
     console.log("IG webhook body:", JSON.stringify(body));
 
     for (const entry of body.entry || []) {
+      // 1) مسار التعليقات comments
+      for (const change of entry.changes || []) {
+        try {
+          if (change?.field !== "comments") continue;
+
+          const value = change?.value || {};
+          const fromId = value?.from?.id;
+          const username = value?.from?.username;
+          const commentId = value?.id;
+          const commentText = value?.text || "";
+
+          // تجاهل تعليقات حسابك أنت
+          if (!fromId || fromId === SELF_IG_ID || username === "reoshow") {
+            console.log("Skip self/invalid comment event", { fromId, username, commentText });
+            continue;
+          }
+
+          if (!isCreateCommand(commentText)) {
+            console.log("Ignore non-create comment", { fromId, username, commentText });
+            continue;
+          }
+
+          console.log("Create command from comment", { fromId, username, commentId, commentText });
+
+          // رد خاص على التعليق
+          await sendInstagramPrivateReply(
+            commentId,
+            "أرسل لنا الآن رسالة خاصة بكلمة: ابدأ، ثم أرسل صورة واحدة واضحة لوجهك."
+          );
+        } catch (commentError) {
+          console.error("Comment processing failed:", commentError);
+          continue;
+        }
+      }
+
+      // 2) مسار الرسائل الخاصة DM
       for (const event of entry.messaging || []) {
         try {
           const senderId = event?.sender?.id;
           const text = event?.message?.text?.trim();
           const attachments = event?.message?.attachments || [];
 
-          if (!senderId) {
-            console.log("Skip event: no senderId", JSON.stringify(event));
+          // تجاهل رسائلك أنت أو أحداث ناقصة
+          if (!senderId || senderId === SELF_IG_ID) {
+            console.log("Skip self/invalid messaging event", JSON.stringify(event));
             continue;
           }
 
-          if (text && CREATE_COMMANDS.has(text)) {
-            console.log("Command matched", { senderId, text });
+          if (text && isCreateCommand(text)) {
+            console.log("DM command matched", { senderId, text });
 
             await sendInstagramText(
               senderId,
@@ -61,7 +136,7 @@ export async function POST(request) {
 
           if (imageAttachment) {
             const selfieUrl = imageAttachment.payload.url;
-            console.log("Image received", { senderId, selfieUrl });
+            console.log("Image received in DM", { senderId, selfieUrl });
 
             await sendInstagramText(
               senderId,
@@ -99,24 +174,22 @@ export async function POST(request) {
                 senderId,
                 "تعذر بدء إنشاء الصورة الآن. جرّب بعد قليل."
               );
-              continue;
             }
-          } else {
-            console.log("No matching text or image attachment", { senderId, text });
+
+            continue;
           }
+
+          console.log("No matching DM text or image attachment", { senderId, text });
         } catch (eventError) {
-          console.error("Event processing failed:", eventError);
-          // لا نكسر كل الطلب
+          console.error("Messaging event processing failed:", eventError);
           continue;
         }
       }
     }
 
-    // مهم جدًا: رجّع 200 دائمًا إلى Meta
     return Response.json({ ok: true });
   } catch (error) {
     console.error("POST /api/ig-webhook fatal error:", error, body);
-    // حتى هنا، الأفضل نرجع 200 حتى لا يعيد Meta الإرسال بجنون أثناء التشخيص
     return Response.json({
       ok: true,
       warning: true,
