@@ -1,7 +1,5 @@
 import { sendInstagramImage, sendInstagramText } from "../lib/instagram";
 
-const userState = new Map();
-
 export async function POST(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -20,7 +18,6 @@ export async function POST(request) {
         recipientId,
         "تعذر إنشاء الصورة هذه المرة. جرّب بصورة أوضح للوجه."
       );
-      userState.delete(recipientId);
       return Response.json({ ok: true, status });
     }
 
@@ -31,17 +28,15 @@ export async function POST(request) {
         recipientId,
         "اكتمل التنفيذ لكن لم أحصل على رابط الصورة النهائية."
       );
-      userState.delete(recipientId);
       return Response.json({ ok: false, error: "Missing output URL" }, { status: 500 });
     }
 
     await sendInstagramImage(recipientId, imageUrl);
-    userState.delete(recipientId);
 
     return Response.json({ ok: true, imageUrl });
   } catch (error) {
     return Response.json(
-      { ok: false, error: error?.message || "Unknown error" },
+      { ok: false, where: "POST /api/replicate-webhook", error: error?.message || "Unknown error" },
       { status: 500 }
     );
   }
