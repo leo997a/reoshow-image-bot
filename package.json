@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@google/genai": "^1.14.0"
+    "@fal-ai/client": "latest"
   }
 }
